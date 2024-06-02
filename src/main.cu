@@ -1,18 +1,4 @@
-/*
-    Copyright (C) 2023 MrSpike63
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as published by
-    the Free Software Foundation, version 3.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-*/
 
 #if defined(_WIN64)
     #define WIN32_NO_STATUS
@@ -37,13 +23,9 @@
 #include "cpu_keccak.h"
 #include "cpu_math.h"
 
-
 #define OUTPUT_BUFFER_SIZE 10000
-
 #define BLOCK_SIZE 256U
 #define THREAD_WORK (1U << 8)
-
-
 
 __constant__ CurvePoint thread_offsets[BLOCK_SIZE];
 __constant__ CurvePoint addends[THREAD_WORK - 1];
@@ -72,22 +54,41 @@ __device__ int score_leading_zeros(Address a) {
     int n = __clz(a.a);
     if (n == 32) {
         n += __clz(a.b);
-
         if (n == 64) {
             n += __clz(a.c);
-
             if (n == 96) {
                 n += __clz(a.d);
-
                 if (n == 128) {
                     n += __clz(a.e);
                 }
             }
         }
     }
-
     return n >> 3;
 }
+
+__device__ int score_leading_digits(Address a) {
+    uint32_t address_parts[] = {a.a, a.b, a.c, a.d, a.e};
+    int leading_digit = (address_parts[0] >> 28) & 0xF;
+
+    if (leading_digit == 0 || leading_digit > 9) {
+        return 0; // Return 0 if the leading digit is not 1-9
+    }
+
+    int count = 0;
+    for (int i = 0; i < 5; i++) {
+        for (int j = 0; j < 8; j++) {
+            uint8_t digit = (address_parts[i] >> (28 - 4 * j)) & 0xF;
+            if (digit == leading_digit) {
+                count++;
+            } else {
+                return count;  // Return count as soon as a non-matching digit is found
+            }
+        }
+    }
+    return count;  // Return count if all digits match
+}
+
 
 #ifdef __linux__
     #define atomicMax_ul(a, b) atomicMax((unsigned long long*)(a), (unsigned long long)(b))
@@ -101,6 +102,7 @@ __device__ void handle_output(int score_method, Address a, uint64_t key, bool in
     int score = 0;
     if (score_method == 0) { score = score_leading_zeros(a); }
     else if (score_method == 1) { score = score_zero_bytes(a); }
+    else if (score_method == 2) { score = score_leading_digits(a); }
 
     if (score >= device_memory[1]) {
         atomicMax_ul(&device_memory[1], score);
@@ -119,6 +121,7 @@ __device__ void handle_output2(int score_method, Address a, uint64_t key) {
     int score = 0;
     if (score_method == 0) { score = score_leading_zeros(a); }
     else if (score_method == 1) { score = score_zero_bytes(a); }
+    else if (score_method == 2) { score = score_leading_digits(a); }
 
     if (score >= device_memory[1]) {
         atomicMax_ul(&device_memory[1], score);
@@ -137,18 +140,15 @@ __device__ void handle_output2(int score_method, Address a, uint64_t key) {
 #include "contract_address2.h"
 #include "contract_address3.h"
 
-
 int global_max_score = 0;
 std::mutex global_max_score_mutex;
 uint32_t GRID_SIZE = 1U << 15;
 
 struct Message {
     uint64_t time;
-
     int status;
     int device_index;
     cudaError_t error;
-
     double speed;
     int results_count;
     _uint256* results;
@@ -157,7 +157,6 @@ struct Message {
 
 std::queue<Message> message_queue;
 std::mutex message_queue_mutex;
-
 
 #define gpu_assert(call) { \
     cudaError_t e = call; \
@@ -175,7 +174,6 @@ std::mutex message_queue_mutex;
 uint64_t milliseconds() {
     return (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())).count();
 }
-
 
 void host_thread(int device, int device_index, int score_method, int mode, Address origin_address, Address deployer_address, _uint256 bytecode) {
     uint64_t GRID_WORK = ((uint64_t)BLOCK_SIZE * (uint64_t)GRID_SIZE * (uint64_t)THREAD_WORK);
@@ -204,7 +202,6 @@ void host_thread(int device, int device_index, int score_method, int mode, Addre
     max_score_host[0] = 2;
     gpu_assert(cudaMemcpyToSymbol(device_memory, device_memory_host, 2 * sizeof(uint64_t)));
     gpu_assert(cudaDeviceSynchronize())
-
 
     if (mode == 0 || mode == 1) {
         gpu_assert(cudaMalloc(&block_offsets, GRID_SIZE * sizeof(CurvePoint)))
@@ -418,7 +415,7 @@ void host_thread(int device, int device_index, int score_method, int mode, Addre
 
                         uint64_t k_offset = output_buffer_host[i];
                         _uint256 k = cpu_add_256(random_key, _uint256{0, 0, 0, 0, 0, 0, (uint32_t)(k_offset >> 32), (uint32_t)(k_offset & 0xFFFFFFFF)});
-            
+
                         int idx = valid_results++;
                         results[idx] = k;
                         scores[idx] = output_buffer2_host[i];
@@ -513,7 +510,6 @@ void host_thread(int device, int device_index, int score_method, int mode, Addre
     }
 }
 
-
 void print_speeds(int num_devices, int* device_ids, double* speeds) {
     double total = 0.0;
     for (int i = 0; i < num_devices; i++) {
@@ -526,9 +522,8 @@ void print_speeds(int num_devices, int* device_ids, double* speeds) {
     }
 }
 
-
 int main(int argc, char *argv[]) {
-    int score_method = -1; // 0 = leading zeroes, 1 = zeros
+    int score_method = -1; // 0 = leading zeroes, 1 = zeros, 2 = leading digits
     int mode = 0; // 0 = address, 1 = contract, 2 = create2 contract, 3 = create3 proxy contract
     char* input_file = 0;
     char* input_address = 0;
@@ -546,6 +541,9 @@ int main(int argc, char *argv[]) {
             i++;
         } else if (strcmp(argv[i], "--zeros") == 0 || strcmp(argv[i], "-z") == 0) {
             score_method = 1;
+            i++;
+        } else if (strcmp(argv[i], "--leading-digits") == 0 || strcmp(argv[i], "-ld") == 0) {
+            score_method = 2;
             i++;
         } else if (strcmp(argv[i], "--contract") == 0 || strcmp(argv[i], "-c") == 0) {
             mode = 1;
@@ -596,14 +594,12 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if ((mode == 2 || mode == 3) && !input_deployer_address) {
+    if ((mode == 2 or mode == 3) && !input_deployer_address) {
         printf("You must specify a deployer address when using --contract3\n");
         return 1;
     }
 
-
-
-    for (int i = 0; i < num_devices; i++) {
+        for (int i = 0; i < num_devices; i++) {
         cudaError_t e = cudaSetDevice(device_ids[i]);
         if (e != cudaSuccess) {
             printf("Could not detect device %d\n", device_ids[i]);
@@ -619,7 +615,7 @@ int main(int argc, char *argv[]) {
             printf("Failed to open the bytecode file.\n");
             return 1;
         }
-        
+
         int file_size = 0;
         {
             infile.seekg(0, std::ios::end);
@@ -713,7 +709,6 @@ int main(int argc, char *argv[]) {
         #undef round
     }
     #undef nothex
-
 
     std::vector<std::thread> threads;
     uint64_t global_start_time = milliseconds();
