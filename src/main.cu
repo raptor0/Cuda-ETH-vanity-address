@@ -71,8 +71,8 @@ __device__ int score_leading_digits(Address a) {
     uint32_t address_parts[] = {a.a, a.b, a.c, a.d, a.e};
     int leading_digit = (address_parts[0] >> 28) & 0xF;
 
-    if (leading_digit == 0 || leading_digit > 9) {
-        return 0; // Return 0 if the leading digit is not 1-9
+    if (leading_digit > 15) {
+        return 0; // Return 0 if the leading digit is not a valid hex digit
     }
 
     int count = 0;
@@ -88,6 +88,7 @@ __device__ int score_leading_digits(Address a) {
     }
     return count;  // Return count if all digits match
 }
+
 
 
 #ifdef __linux__
