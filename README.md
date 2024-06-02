@@ -8,7 +8,7 @@ Thi sis a fork that includes [Leading-digits] to also look for other digits [0x1
     Scoring methods
       (-lz) --leading-zeros               Count zero bytes at the start of the address
        (-z) --zeros                       Count zero bytes anywhere in the address
-            --leading-digits              Counts any digit from 0-9 [e.g 0x111111111]  
+            --leading-digits              find leading repeated digits from 1-9 [e.g 0x111111111, 0x666666666]  
     Modes (normal addresses by default)
        (-c) --contract                    Search for addresses and score the contract address generated using nonce=0
       (-c2) --contract2                   Search for contract addresses using the CREATE2 opcode
