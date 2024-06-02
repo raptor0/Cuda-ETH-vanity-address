@@ -1,12 +1,14 @@
 # Vanity Eth Address
 Vanity Eth Address is a tool to generate Ethereum addresses that match certain criteria, accelerated with NVIDIA CUDA-enabled GPUs.
 
+Thi sis a fork that includes [Leading-digits] to also look for other digits [0x1111111..etc]
 ## Usage
 ```
 ./vanity-eth-addresss [PARAMETERS]
     Scoring methods
       (-lz) --leading-zeros               Count zero bytes at the start of the address
        (-z) --zeros                       Count zero bytes anywhere in the address
+            --leading-digits              Counts any digit from 0-9 [e.g 0x111111111]  
     Modes (normal addresses by default)
        (-c) --contract                    Search for addresses and score the contract address generated using nonce=0
       (-c2) --contract2                   Search for contract addresses using the CREATE2 opcode
@@ -23,6 +25,8 @@ Examples:
     ./vanity-eth-address --leading-zeros --contract2 --bytecode bytecode.txt --address 0x0000000000000000000000000000000000000000 --device 0
 ```
 
+Note: you can't specify a specific rarity/score, the code will automatically only hit equal or higher rarities, e.g: you hit score 05[10digits] = 0x666666666  all-new hits must be score 05+. and if you find  a score 06 [12 digits] all new hits will only be score 6 or higher
+
 ## Benchmarks
 | GPU  | Normal addresses | Contract addresses | CREATE2 addresses |
 | ---- | ---------------- | ------------------ | ----------------- |
@@ -31,6 +35,7 @@ Examples:
 | 3070 | 1000M/s          | 550M/s             | 1300M/s           |
 
 Note that configuration and environment can affect performance.
+
 
 ## Requirements
 * A NVIDIA CUDA-enabled GPU with a compute capability of at least 5.2 (Roughly anything above a GeForce GTX 950. For a full list [see here](https://developer.nvidia.com/cuda-gpus)).
